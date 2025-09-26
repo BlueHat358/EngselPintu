@@ -1,4 +1,7 @@
 import logging
+from logging.handlers import RotatingFileHandler
+import os
+import time
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -6,6 +9,7 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
+from telegram.error import TelegramError
 
 # Impor konfigurasi dan handler
 import config
@@ -19,11 +23,24 @@ from handlers.family_handler import family_conversation_handler
 from handlers.auth_handler import auth_conversation_handler
 
 # Konfigurasi logging untuk debugging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+log_file_path = os.path.expanduser('~/bot.log')
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter(
+  '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
+file_handler = RotatingFileHandler(
+    log_file_path, maxBytes=3 * 1024 * 1024, backupCount=2)
+file_handler.setFormatter(formatter)
+
+if not logger.hasHandlers():
+  logger.addHandler(console_handler)
+  logger.addHandler(file_handler)
 
 
 def main() -> None:
@@ -74,4 +91,21 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-  main()
+  while True:  # 3. Buat loop tak terbatas
+    try:
+      # Jalankan fungsi main yang berisi logika bot
+      main()
+
+    except TelegramError as e:
+      # Tangkap error spesifik jika koneksi internet putus
+      logger.error(f"Koneksi internet terputus! Error: {e}")
+      print("Koneksi internet terputus. Mencoba lagi dalam 15 detik...")
+      # Tunggu sebentar sebelum mencoba menjalankan lagi
+      time.sleep(15)
+
+    except Exception as e:
+      # Tangkap semua error lain yang mungkin terjadi agar bot tidak mati
+      logger.error(f"Terjadi error tak terduga: {e}")
+      print(f"Terjadi error tak terduga: {e}. Merestart bot dalam 30 detik...")
+      # Tunggu lebih lama untuk error yang tidak diketahui
+      time.sleep(30)
