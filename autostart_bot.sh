@@ -1,8 +1,16 @@
-#!/system/bin/sh
-# Tunggu 30 detik setelah boot agar sistem dan koneksi internet stabil
-sleep 30
+# simpan file ini di ~/.termux/boot/start_bot.sh
 
-# Jalankan perintah di dalam Termux
-# Ganti 'nama-folder-proyek' dengan direktori Anda
-am startservice --user 0 -n com.termux/com.termux.app.TermuxService && \
-su -c "cd /data/data/com.termux/files/home/EngselPintu && termux-wake-lock && python bot.py"
+
+#!/data/data/com.termux/files/usr/bin/sh
+
+# Beri jeda 20 detik untuk memastikan koneksi internet siap setelah boot
+sleep 20
+
+# Pindah ke direktori proyek Anda
+cd ~/EngselPintu
+
+# Aktifkan wake lock agar Termux tidak 'tertidur'
+termux-wake-lock
+
+# Jalankan bot Anda (log akan diurus oleh Python)
+python bot.py

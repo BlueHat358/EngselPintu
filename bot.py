@@ -23,7 +23,8 @@ from handlers.family_handler import family_conversation_handler
 from handlers.auth_handler import auth_conversation_handler
 
 # Konfigurasi logging untuk debugging
-log_file_path = os.path.expanduser('~/bot.log')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+log_file_path = os.path.join(BASE_DIR, 'bot.log')
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
