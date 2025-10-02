@@ -1,10 +1,12 @@
 # File ini mengadaptasi fungsi dari app/client/engsel.py untuk digunakan oleh bot
 # Semua `print` dan `input` dihilangkan, dan fungsi mengembalikan data atau None/Exception
 
+from app.client.encrypt import load_ax_fp, ax_device_id
 import requests
 import uuid
 import time
 import qrcode
+import json
 from io import BytesIO
 from datetime import datetime, timezone, timedelta
 
@@ -26,8 +28,8 @@ from app.client.purchase import (
     settlement_multipayment
 )
 
+
 # Inisialisasi beberapa variabel global dari kode asli
-from app.client.encrypt import load_ax_fp, ax_device_id
 AX_DEVICE_ID = ax_device_id()
 AX_FP = load_ax_fp()
 GET_OTP_URL = f"{BASE_CIAM_URL}/realms/xl-ciam/auth/otp"
@@ -235,9 +237,9 @@ def get_packages_by_family(id_token: str, family_code: str, is_enterprise: bool 
           "price": option.get("price"),
           "package_option_code": option.get("package_option_code"),
           "validity": option.get("validity"),
+          "order": option.get("order"),  # <-- TAMBAHKAN BARIS INI
           "family_name": family_data.get("package_family", {}).get("name", "N/A"),
       })
-
   return package_list
 
 
@@ -315,6 +317,34 @@ def purchase_package_with_balance(tokens: dict, package_option_code: str, price:
 
   print(f"Hasil pembelian: {purchase_result}")
   return purchase_result
+
+
+def purchase_multi_package_with_balance(tokens: dict, payment_items: list, total_price: int) -> dict | None:
+  if not payment_items:
+    return None
+
+  # --- PERBAIKAN LOGIKA V2 ---
+  # 1. Bangun string payment_targets
+  payment_targets = ";".join([item['item_code'] for item in payment_items])
+
+  first_item_code = payment_items[0]['item_code']
+  details = get_package_details(tokens['id_token'], first_item_code)
+  methods = get_payment_methods(MYXL_API_KEY, tokens, details.get(
+    "token_confirmation"), first_item_code)
+
+  payload = {
+      "payment_for": "BUY_PACKAGE", "access_token": tokens["access_token"],
+      "token_payment": methods["token_payment"], "payment_method": "BALANCE",
+      "total_amount": total_price, "items": payment_items,
+      "total_discount": 0, "is_enterprise": False, "lang": "en", "timestamp": int(time.time()),
+  }
+
+  # 2. Kirim payment_targets ke fungsi level rendah
+  return send_payment_request(
+      api_key=MYXL_API_KEY, payload_dict=payload, access_token=tokens["access_token"],
+      id_token=tokens["id_token"], token_payment=methods["token_payment"],
+      ts_to_sign=methods["timestamp"], payment_targets_override=payment_targets
+  )
 
 
 def generate_qris_payment(tokens: dict, package_option_code: str, price: int, item_name: str) -> BytesIO | None:
@@ -409,6 +439,76 @@ def generate_qris_payment(tokens: dict, package_option_code: str, price: int, it
   return (True, buffer)
 
 
+def generate_qris_payment_multi(tokens: dict, payment_items: list, total_price: int) -> tuple:
+  if not payment_items:
+    return (False, "Tidak ada item.")
+
+  # --- PERBAIKAN LOGIKA V2 ---
+  # 1. Bangun string payment_targets
+  payment_targets = ";".join([item['item_code'] for item in payment_items])
+
+  first_item_code = payment_items[0]['item_code']
+  details = get_package_details(tokens['id_token'], first_item_code)
+  methods = get_payment_methods(MYXL_API_KEY, tokens, details.get(
+      "token_confirmation"), first_item_code)
+
+  # 2. Kirim payment_targets ke fungsi level rendah
+  settlement_result = settlement_qris(
+      api_key=CRYPTO_API_KEY, tokens=tokens, token_payment=methods["token_payment"],
+      ts_to_sign=methods["timestamp"], payment_target=first_item_code, price=total_price,
+      item_name=f"Combo Pembelian ({len(payment_items)} item)",
+      payment_items_override=payment_items, payment_targets_override=payment_targets
+  )
+
+  if not isinstance(settlement_result, dict):
+    return (False, f"Menerima respons tidak terduga dari server:\n`{str(settlement_result)}`")
+
+  if settlement_result.get("status") != "SUCCESS":
+    message = settlement_result.get('message', 'Settlement Gagal')
+    description = settlement_result.get('description', 'Tidak ada deskripsi.')
+    error_details = f"Pesan: `{message}`\nDeskripsi: `{description}`"
+    return (False, error_details)
+
+  transaction_id = settlement_result["transaction_id"]
+
+  print(f"Transaksi ID: {transaction_id}. Mengambil kode QRIS...")
+  qris_result = get_qris_code(
+      api_key=MYXL_API_KEY, tokens=tokens, transaction_id=transaction_id
+  )
+
+  if not transaction_id:
+    print("Gagal melakukan settlement QRIS.")
+    return None
+
+  # 3. Dapatkan data string QRIS menggunakan ID transaksi
+  print(f"Transaksi ID: {transaction_id}. Mengambil kode QRIS...")
+  qris_data_string = get_qris_code(
+      api_key=MYXL_API_KEY,
+      tokens=tokens,
+      transaction_id=transaction_id
+  )
+
+  if not isinstance(qris_result, dict):
+    return (False, f"Menerima respons tidak terduga saat mengambil kode QR:\n`{str(qris_result)}`")
+
+  if qris_result.get("status") != "SUCCESS":
+    message = qris_result.get('message', 'Gagal Mendapatkan Kode QRIS')
+    description = qris_result.get('description', 'Tidak ada deskripsi.')
+    error_details = f"Pesan: `{message}`\nDeskripsi: `{description}`"
+    return (False, error_details)
+
+  qris_data_string = qris_result["qr_code"]
+
+  # 4. Buat gambar QR code
+  print("Membuat gambar QR code...")
+  qr_image = qrcode.make(qris_data_string)
+  buffer = BytesIO()
+  qr_image.save(buffer, "PNG")
+  buffer.seek(0)
+
+  return (True, buffer)
+
+
 def initiate_ewallet_payment(
     tokens: dict, package_option_code: str, price: int, item_name: str,
     payment_method: str, wallet_number: str = ""
@@ -449,3 +549,91 @@ def initiate_ewallet_payment(
   )
 
   return result
+
+
+def initiate_ewallet_payment_multi(tokens: dict, payment_items: list, total_price: int, payment_method: str, wallet_number: str = "") -> dict:
+    # --- PERBAIKAN LOGIKA V2 ---
+    # 1. Bangun string payment_targets
+  payment_targets = ";".join([item['item_code'] for item in payment_items])
+
+  first_item_code = payment_items[0]['item_code']
+  details = get_package_details(tokens['id_token'], first_item_code)
+  methods = get_payment_methods(MYXL_API_KEY, tokens, details.get(
+    "token_confirmation"), first_item_code)
+
+  # 2. Kirim payment_targets ke fungsi level rendah
+  return settlement_multipayment(
+      api_key=CRYPTO_API_KEY, tokens=tokens, token_payment=methods["token_payment"],
+      ts_to_sign=methods["timestamp"], payment_target=first_item_code,
+      price=total_price, amount_int=total_price, wallet_number=wallet_number,
+      item_name=f"Combo Pembelian ({len(payment_items)} item)", payment_method=payment_method,
+      payment_items_override=payment_items, payment_targets_override=payment_targets
+  )
+
+
+# Cache untuk Hot 2
+hot_packages_2_cache = {
+    "data": None,
+    "timestamp": 0
+}
+
+
+def get_hot_packages_2() -> list | None:
+  """Mengambil daftar paket 'hot 2' dari URL JSON statis."""
+
+  # Cek cache dulu (berlaku 10 menit)
+  if hot_packages_2_cache["data"] and (time.time() - hot_packages_2_cache["timestamp"] < 600):
+    print("Mengambil paket hot 2 dari cache...")
+    return hot_packages_2_cache["data"]
+
+  # PENTING: Ganti URL ini jika sumber datanya berbeda
+  url = "https://me.mashu.lol/pg-hot2.json"
+  print("Mengambil daftar paket hot 2 dari internet...")
+
+  try:
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+
+    json_data = response.json()
+
+    # --- TAMBAHKAN BARIS INI UNTUK LOGGING ---
+    # print("--- MULAI RAW JSON HOT 2 ---")
+    # print(json.dumps(json_data, indent=2))
+    # print("--- AKHIR RAW JSON HOT 2 ---")
+    # ----------------------------------------
+
+    hot_packages_2_cache["data"] = json_data
+    hot_packages_2_cache["timestamp"] = time.time()
+
+    return hot_packages_2_cache["data"]
+  except Exception as e:
+    print(f"Gagal mengambil data hot package 2: {e}")
+    return None
+
+
+def get_package_details_from_hot_list(id_token: str, hot_package_item: dict) -> dict | None:
+  """
+  Mencari detail lengkap sebuah paket (termasuk package_option_code)
+  menggunakan info dari JSON hot list (family_code, is_enterprise, order).
+  """
+  family_code = hot_package_item.get("family_code")
+  is_enterprise = hot_package_item.get("is_enterprise", False)
+  target_order = hot_package_item.get("order")
+
+  # Ambil semua paket dalam satu family
+  all_packages_in_family = get_packages_by_family(
+    id_token, family_code, is_enterprise)
+  if not all_packages_in_family:
+    return None
+
+  # Cari paket yang cocok berdasarkan 'order'
+  for pkg in all_packages_in_family:
+    # Kita perlu memodifikasi get_packages_by_family untuk menyertakan 'order'
+    # Untuk sekarang, kita asumsikan 'order' ada di dalam data yang dikembalikan.
+    # Jika tidak, kita perlu memodifikasi get_packages_by_family.
+    # Mari kita asumsikan 'order' ada untuk saat ini.
+    if pkg.get("order") == target_order:
+      # Jika cocok, ambil detail lengkapnya menggunakan package_option_code
+      return get_package_details(id_token, pkg.get("package_option_code"))
+
+  return None  # Tidak ditemukan

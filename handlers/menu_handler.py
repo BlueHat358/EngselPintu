@@ -723,6 +723,8 @@ async def show_main_menu(update: Update, context: CallbackContext):
   if update.callback_query:
     await update.callback_query.answer("Memuat data...")
 
+  await msg_target.reply_text("Memuat data...")
+
   refresh_token = user_service.get_refresh_token(user_id)
   tokens = myxl_service.get_new_token(refresh_token) if refresh_token else None
   if not tokens:
@@ -810,9 +812,17 @@ async def start_purchase_flow(update: Update, context: CallbackContext, package_
     return
 
   context.user_data['purchase_pending_code'] = package_option_code
-  price = details["package_option"]["price"]
+  price_val = details["package_option"]["price"]
+  try:
+    # Konversi ke string dulu untuk jaga-jaga, lalu bersihkan
+    cleaned_price = str(price_val).replace(
+      "Rp", "").replace(".", "").replace(",", "").strip()
+    price_int = int(cleaned_price)
+  except (ValueError, TypeError):
+    price_int = 0
+
   text = (
-      f"**Detail Paket**\nNama: `{details['package_option']['name']}`\nHarga: `Rp {price:,}`\nAktif: `{details['package_option']['validity']}`\n\n"
+      f"**Detail Paket**\nNama: `{details['package_option']['name']}`\nHarga: `Rp {price_int:,}`\nAktif: `{details['package_option']['validity']}`\n\n"
       f"Gunakan harga lain (overwrite)?"
   )
   keyboard = [[InlineKeyboardButton("✅ Ya", callback_data='overwrite_yes'), InlineKeyboardButton(

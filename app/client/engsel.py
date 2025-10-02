@@ -21,6 +21,8 @@ AX_DEVICE_ID = ax_device_id()
 AX_FP = load_ax_fp()
 SUBMIT_OTP_URL = BASE_CIAM_URL + "/realms/xl-ciam/protocol/openid-connect/token"
 UA = os.getenv("UA")
+MYXL_API_KEY = os.getenv("MYXL_API_KEY")
+
 
 # ... (sisa fungsi get_otp, submit_otp, save_tokens, load_tokens, get_new_token tetap sama) ...
 # ... (karena mereka tidak secara langsung memanggil send_api_request) ...
@@ -397,13 +399,14 @@ def send_payment_request(
     id_token: str,
     token_payment: str,
     ts_to_sign: int,
-    payment_for: str = "BUY_PACKAGE"
+    payment_for: str = "BUY_PACKAGE",
+    payment_targets_override: str = None
 ):
   path = "payments/api/v8/settlement-balance"
   package_code = payload_dict["items"][0]["item_code"]
 
   encrypted_payload = encryptsign_xdata(
-      api_key=api_key,
+      crypto_api_key=CRYPTO_API_KEY,
       method="POST",
       path=path,
       id_token=id_token,
@@ -418,21 +421,24 @@ def send_payment_request(
 
   body = encrypted_payload["encrypted_body"]
 
+  package_code_for_sign = payment_targets_override if payment_targets_override else payload_dict[
+    "items"][0]["item_code"]
+
   x_sig = get_x_signature_payment(
-      api_key,
-      access_token,
-      ts_to_sign,
-      package_code,
-      token_payment,
-      "BALANCE",
-      payment_for
+      crypto_api_key=CRYPTO_API_KEY,
+      access_token=access_token,
+      sig_time_sec=ts_to_sign,
+      package_code=package_code_for_sign,
+      token_payment=token_payment,
+      payment_method="BALANCE",
+      payment_for=payment_for
   )
 
   headers = {
       "host": BASE_API_URL.replace("https://", ""),
       "content-type": "application/json; charset=utf-8",
       "user-agent": UA,
-      "x-api-key": API_KEY,
+      "x-api-key": MYXL_API_KEY,
       "authorization": f"Bearer {id_token}",
       "x-hv": "v3",
       "x-signature-time": str(sig_time_sec),

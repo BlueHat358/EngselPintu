@@ -634,13 +634,28 @@ def settlement_multipayment(
     amount_int: int,
     wallet_number: str,
     item_name: str = "",
-    payment_method: str = "DANA"
+    payment_method: str = "DANA",
+    payment_items_override: list = None,
+    payment_targets_override: str = None
 ):
   path = "payments/api/v8/settlement-multipayment/ewallet"
-  settlement_payload = {"payment_for": "BUY_PACKAGE", "access_token": tokens["access_token"], "wallet_number": wallet_number, "total_amount": amount_int, "items": [
-    # Diringkas agar muat
-    {"item_code": payment_target, "item_price": price, "item_name": item_name, "tax": 0}], "verification_token": token_payment, "payment_method": payment_method, "timestamp": int(time.time()), "lang": "en", }
 
+  items_to_purchase = payment_items_override or [
+    {"item_code": payment_target, "item_price": price, "item_name": item_name, "tax": 0}]
+
+  settlement_payload = {
+      "payment_for": "BUY_PACKAGE", "access_token": tokens["access_token"],
+      "wallet_number": wallet_number, "total_amount": amount_int,
+      # PERBAIKAN: Kosongkan additional_data sesuai skrip v2 Anda
+      "additional_data": {},
+      "items": items_to_purchase,
+      "verification_token": token_payment, "payment_method": payment_method,
+      "timestamp": int(time.time()), "lang": "en", "is_enterprise": False,
+      "total_discount": 0, "coupon": "", "topup_number": "",
+      "total_fee": 0, "is_use_point": False, "can_trigger_rating": False, "cc_payment_type": "",
+      "autobuy": {"is_using_autobuy": False, "activated_autobuy_code": "", "autobuy_threshold_setting": {"label": "", "type": "", "value": 0}},
+      "akrab": {"akrab_members": [], "akrab_parent_alias": "", "members": []},
+  }
   # PERUBAHAN 2: Selalu gunakan CRYPTO_API_KEY untuk fungsi enkripsi
   encrypted_payload = encryptsign_xdata(
       crypto_api_key=CRYPTO_API_KEY,
@@ -653,11 +668,13 @@ def settlement_multipayment(
     sig_time_sec, tz=timezone.utc).astimezone()
 
   body = encrypted_payload["encrypted_body"]
+  package_code_for_sign = payment_targets_override if payment_targets_override else payment_target
+
   # PERUBAHAN 2 (Lanjutan): Selalu gunakan CRYPTO_API_KEY untuk tanda tangan
   x_sig = get_x_signature_payment(
       crypto_api_key=CRYPTO_API_KEY,
       access_token=tokens["access_token"], sig_time_sec=ts_to_sign,
-      package_code=payment_target, token_payment=token_payment, payment_method=payment_method
+      package_code=package_code_for_sign, token_payment=token_payment, payment_method=payment_method
   )
 
   headers = {
@@ -773,13 +790,29 @@ def settlement_qris(
     payment_target: str,
     price: int,
     item_name: str = "",
+    payment_items_override: list = None,
+    payment_targets_override: str = None
 ):
   amount_int = price
   path = "payments/api/v8/settlement-multipayment/qris"
-  settlement_payload = {"payment_for": "BUY_PACKAGE", "access_token": tokens["access_token"], "total_amount": amount_int, "items": [
-    # Diringkas
-    {"item_code": payment_target, "item_price": price, "item_name": item_name, "tax": 0}], "verification_token": token_payment, "payment_method": "QRIS", "timestamp": int(time.time()), "lang": "en", }
 
+  items_to_purchase = payment_items_override or [
+    {"item_code": payment_target, "item_price": price, "item_name": item_name, "tax": 0}]
+
+  settlement_payload = {
+      "payment_for": "BUY_PACKAGE", "access_token": tokens["access_token"],
+      "is_myxl_wallet": False,
+      # PERBAIKAN: Kosongkan additional_data sesuai skrip v2 Anda
+      "additional_data": {},
+      "total_amount": amount_int,
+      "items": items_to_purchase,
+      "verification_token": token_payment, "payment_method": "QRIS",
+      "timestamp": int(time.time()), "lang": "en", "is_enterprise": False,
+      "total_discount": 0, "coupon": "", "topup_number": "",
+      "total_fee": 0, "is_use_point": False, "can_trigger_rating": False,
+      "autobuy": {"is_using_autobuy": False, "activated_autobuy_code": "", "autobuy_threshold_setting": {"label": "", "type": "", "value": 0}},
+      "akrab": {"akrab_members": [], "akrab_parent_alias": "", "members": []},
+    }
   # PERUBAHAN 2: Selalu gunakan CRYPTO_API_KEY untuk fungsi enkripsi
   encrypted_payload = encryptsign_xdata(
       crypto_api_key=CRYPTO_API_KEY,
@@ -792,11 +825,14 @@ def settlement_qris(
     sig_time_sec, tz=timezone.utc).astimezone()
 
   body = encrypted_payload["encrypted_body"]
+
+  package_code_for_sign = payment_targets_override if payment_targets_override else payment_target
+
   # PERUBAHAN 2 (Lanjutan): Selalu gunakan CRYPTO_API_KEY untuk tanda tangan
   x_sig = get_x_signature_payment(
       crypto_api_key=CRYPTO_API_KEY,
       access_token=tokens["access_token"], sig_time_sec=ts_to_sign,
-      package_code=payment_target, token_payment=token_payment, payment_method="QRIS"
+      package_code=package_code_for_sign, token_payment=token_payment, payment_method="QRIS"
   )
 
   headers = {

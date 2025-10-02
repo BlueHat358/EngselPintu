@@ -19,6 +19,7 @@ from handlers.menu_handler import (
   handle_ewallet_selection, handle_ewallet_number_input
 )
 from handlers.hot_handler import hot_conversation_handler
+from handlers.hot_2_handler import hot_2_conversation_handler
 from handlers.family_handler import family_conversation_handler
 from handlers.auth_handler import auth_conversation_handler
 
@@ -74,6 +75,7 @@ def main() -> None:
   application.add_handler(CallbackQueryHandler(
     handle_payment_choice, pattern='^cancel_purchase$'))  # Handler untuk batal
   application.add_handler(hot_conversation_handler)
+  application.add_handler(hot_2_conversation_handler)
   application.add_handler(family_conversation_handler)
 
   # Message handler untuk menerima input harga baru

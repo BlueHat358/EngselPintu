@@ -15,7 +15,11 @@ def main_menu_keyboard():
   keyboard = [
       [InlineKeyboardButton("📦 Lihat Paket Saya",
                             callback_data='my_packages')],
-      [InlineKeyboardButton("🔥 Beli Paket Hot", callback_data='hot_packages')],
+      [
+          InlineKeyboardButton("🔥 Hot 1", callback_data='hot_packages'),
+          InlineKeyboardButton(
+            "🔥 Hot 2", callback_data='hot_packages_2')  # <-- TOMBOL BARU
+      ],
       [
           InlineKeyboardButton("Beli (Family Code)",
                                callback_data='buy_family_code'),

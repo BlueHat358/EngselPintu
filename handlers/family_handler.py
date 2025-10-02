@@ -54,8 +54,15 @@ def build_page_content(full_package_list: list, page: int) -> tuple:
 
   for i, pkg in enumerate(packages_on_page):
     global_index = start_index + i
-    price_formatted = f"Rp {pkg.get('price', 0):,}".replace(',', '.')
+    price_str = str(pkg.get('price', '0'))
+    try:
+      cleaned_price = price_str.replace("Rp", "").replace(
+        ".", "").replace(",", "").strip()
+      price_int = int(cleaned_price)
+    except (ValueError, TypeError):
+      price_int = 0
 
+    price_formatted = f"Rp {price_int:,}".replace(',', '.')
     # Tombol untuk setiap paket
     keyboard.append([
         InlineKeyboardButton(
